@@ -9,6 +9,8 @@ export const verifyEmail = (token) => api.post('/api/auth/verify-email', { token
 export const resendVerification = (email) => api.post('/api/auth/resend-verification', { email });
 export const refreshTokens = (refresh_token) => api.post('/api/auth/refresh', { refresh_token });
 export const logout = () => api.post('/api/auth/logout');
+export const forgotPassword = (email) => api.post('/api/auth/forgot-password', { email });
+export const resetPassword = (token, new_password) => api.post('/api/auth/reset-password', { token, new_password });
 
 // Dashboard
 export const getDashboard = () => api.get('/api/dashboard');

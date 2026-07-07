@@ -166,6 +166,81 @@ def _sentiment_label(score):
     return "Neutral"
 
 
+# --- Semantic (TF-IDF) fallback for recall questions with no explicit date ---
+# e.g. "when did I get fired" — not parseable as a date, but clearly a lookup
+# over journal *content*. This runs entirely in-process via scikit-learn: no
+# external API, no model download, safe on a memory-constrained deployment.
+SEMANTIC_RECALL_HINT = re.compile(
+    r"\b(remember|recall|when did|what did i|tell me about|happened|wrote|written|journal|"
+    r"back when|that time|did i (ever|write)|do i (have|any) entr)\b",
+    re.I,
+)
+SEMANTIC_TOP_K = 5
+SEMANTIC_MIN_SCORE = 0.12
+SEMANTIC_MAX_CANDIDATES = 500
+
+
+def looks_like_recall_query(text: str) -> bool:
+    """Whether a chat message reads like an attempt to recall something,
+    gating the (more expensive, occasionally noisy) semantic search so it
+    doesn't run on every ordinary chat message."""
+    return bool(text) and bool(SEMANTIC_RECALL_HINT.search(text))
+
+
+async def semantic_search_journals(db, user_id, query_text):
+    """Best-effort topic/keyword search over journal entries using TF-IDF + cosine similarity.
+
+    This is lexical overlap, not true neural semantic understanding — it works
+    well when the question shares vocabulary with the entry (e.g. "when did I
+    get fired" matches an entry containing "fired"), but won't generalize across
+    pure synonyms the entry never used. Returns None if there isn't enough data
+    or nothing scores above the relevance floor.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    entries = await (
+        db.journal_entries.find({"user_id": user_id})
+        .sort("timestamp", -1)
+        .to_list(SEMANTIC_MAX_CANDIDATES)
+    )
+    if len(entries) < 2:
+        return None
+
+    texts = [e.get("text", "") for e in entries]
+    try:
+        vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)
+        tfidf_matrix = vectorizer.fit_transform(texts + [query_text])
+    except ValueError:
+        # e.g. empty vocabulary after stop-word removal on very short entries
+        return None
+
+    query_vec = tfidf_matrix[-1]
+    entry_vecs = tfidf_matrix[:-1]
+    scores = cosine_similarity(query_vec, entry_vecs)[0]
+
+    ranked = sorted(zip(scores, entries), key=lambda pair: pair[0], reverse=True)
+    top = [(score, entry) for score, entry in ranked[:SEMANTIC_TOP_K] if score >= SEMANTIC_MIN_SCORE]
+    if not top:
+        return None
+
+    lines = [
+        "[JOURNAL ENTRIES MATCHING THE USER'S QUESTION BY TOPIC]",
+        "These were found by keyword/topic overlap, not an exact date. Use them to answer if "
+        "they're actually relevant; if none of them truly relate to the question, say you "
+        "couldn't find anything about that in the journal rather than guessing.",
+    ]
+    for score, e in top:
+        date_str = e["timestamp"].strftime("%b %d, %Y")
+        body = e.get("text", "")
+        if len(body) > SNIPPET_LEN:
+            body = body[:SNIPPET_LEN].rstrip() + "..."
+        lines.append(f'  * {date_str} [{_sentiment_label(e.get("sentiment_score", 0.0))}] '
+                     f'(relevance {score:.2f}): "{body}"')
+
+    return "\n".join(lines)
+
+
 async def retrieve_journals_context(db, user_id, text):
     """Build an LLM context block of journal entries for date(s) named in `text`.
 

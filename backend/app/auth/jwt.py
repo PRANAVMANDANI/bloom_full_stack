@@ -14,6 +14,18 @@ def create_email_verification_token(user_id: str) -> str:
     return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
+def create_password_reset_token(user_id: str, token_version: int) -> str:
+    """Create a short-lived signed token used to reset a forgotten password.
+
+    Embeds the user's current token_version so the reset link is invalidated
+    the moment a password is actually changed (or another reset completes),
+    preventing an old, already-used reset email from working twice.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(hours=1)
+    to_encode = {"sub": user_id, "token_version": token_version, "exp": expire, "type": "reset"}
+    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
 def create_access_token(data: dict) -> str:
     """Create a short-lived access token."""
     to_encode = data.copy()

@@ -2,11 +2,14 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import AmbientPlayer from './components/AmbientPlayer';
 import useStore from './store/useStore';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import VerifyEmail from './pages/VerifyEmail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Goals from './pages/Goals';
 import HabitTracker from './pages/HabitTracker';
@@ -37,6 +40,8 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Protected routes with layout */}
         <Route
@@ -123,6 +128,9 @@ function App() {
         {/* Default redirect */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+
+      {/* Rendered outside <Routes> so playback survives navigation between pages. */}
+      <AmbientPlayer />
     </BrowserRouter>
   );
 }

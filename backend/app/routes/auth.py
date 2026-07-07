@@ -7,10 +7,15 @@ from bson import ObjectId
 from app.database import get_database
 from app.rate_limit import limiter
 from app.auth.hashing import hash_password, verify_password
-from app.auth.jwt import create_token_pair, verify_token, create_email_verification_token
+from app.auth.jwt import (
+    create_token_pair,
+    verify_token,
+    create_email_verification_token,
+    create_password_reset_token,
+)
 from app.auth.dependencies import get_current_user
 from app.services.google_auth import verify_google_credential, GoogleAuthError
-from app.services.email_sender import send_verification_email
+from app.services.email_sender import send_verification_email, send_password_reset_email
 from app.models.user import (
     UserCreate,
     UserLogin,
@@ -21,6 +26,8 @@ from app.models.user import (
     VerifyEmailRequest,
     ResendVerificationRequest,
     SignupResponse,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -203,6 +210,56 @@ async def google_auth(request: Request, body: GoogleAuthRequest):
     user_doc["_id"] = result.inserted_id
 
     return _token_response(user_doc)
+
+
+@router.post("/forgot-password")
+@limiter.limit("3/hour")
+async def forgot_password(request: Request, body: ForgotPasswordRequest):
+    """Send a password reset email. Always returns a generic response so it
+    can't be used to probe which emails have accounts."""
+    db = get_database()
+    user = await db.users.find_one({"email": body.email.lower()})
+
+    # Only password accounts have a password to reset; Google-only accounts
+    # get the same generic response either way (no account enumeration).
+    if user and user.get("password_hash"):
+        token = create_password_reset_token(str(user["_id"]), user.get("token_version", 0))
+        await send_password_reset_email(user["email"], user.get("name", ""), token)
+
+    return {"message": "If that email has an account, we've sent a link to reset the password."}
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest):
+    """Set a new password from a valid reset token, then revoke all existing sessions."""
+    payload = verify_token(body.token, token_type="reset")
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link is invalid or has expired. Please request a new one.",
+        )
+
+    db = get_database()
+    user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+
+    # The token embeds the token_version at send-time — if it's already moved on
+    # (password changed, another reset used, or a logout happened), reject it.
+    if payload.get("token_version", 0) != user.get("token_version", 0):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link has already been used or is no longer valid. Please request a new one.",
+        )
+
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {"password_hash": hash_password(body.new_password)},
+            "$inc": {"token_version": 1},
+        },
+    )
+    return {"message": "Password reset successfully. Please sign in with your new password."}
 
 
 @router.post("/refresh", response_model=TokenResponse)

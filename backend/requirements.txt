@@ -15,3 +15,4 @@ slowapi
 google-auth
 requests
 aiosmtplib
+scikit-learn

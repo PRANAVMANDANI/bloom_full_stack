@@ -13,7 +13,7 @@ from app.database import get_database
 from app.origin_check import is_allowed_origin
 from app.services.llm_client import get_chat_response
 from app.services.crisis_detector import detect_crisis, CRISIS_RESOURCES
-from app.services.journal_query import retrieve_journals_context
+from app.services.journal_query import retrieve_journals_context, looks_like_recall_query, semantic_search_journals
 from app.routes.goals import goal_doc_to_out
 from app.routes.habits import compute_sobriety_days, habit_doc_to_out
 
@@ -288,6 +288,12 @@ async def chat_websocket_handler(websocket: WebSocket):
             retrieved_journals = await retrieve_journals_context(db, user_id, user_text)
             if retrieved_journals:
                 user_context += "\n\n" + retrieved_journals
+            elif looks_like_recall_query(user_text):
+                # No explicit date named, but this reads like a "remember when..."
+                # question — fall back to topic/keyword search over journal content.
+                semantic_context = await semantic_search_journals(db, user_id, user_text)
+                if semantic_context:
+                    user_context += "\n\n" + semantic_context
 
             # Get LLM response
             conversation_history.append({"role": "user", "text": user_text})

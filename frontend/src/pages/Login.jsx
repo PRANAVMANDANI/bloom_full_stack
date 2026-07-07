@@ -137,6 +137,9 @@ export default function Login() {
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+            <div style={{ textAlign: 'right', marginTop: '6px' }}>
+              <Link to="/forgot-password" style={{ fontSize: '0.8rem' }}>Forgot password?</Link>
+            </div>
           </div>
 
           <button className="btn btn-primary btn-lg w-full" type="submit" disabled={loading}>
