@@ -40,16 +40,13 @@ services:
       - key: GOOGLE_CLIENT_ID
         sync: false
 
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASSWORD
+      # Brevo HTTP API (not SMTP) -- see https://app.brevo.com > Settings > API Keys
+      - key: BREVO_API_KEY
         sync: false
       - key: FROM_EMAIL
         sync: false
+      - key: FROM_NAME
+        value: BLOOM
       - key: EMAIL_VERIFICATION_EXPIRE_HOURS
         value: "24"
 

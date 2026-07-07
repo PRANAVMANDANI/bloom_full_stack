@@ -1,28 +1,34 @@
-"""Transactional email sending via SMTP (Gmail).
+"""Transactional email sending via Brevo's HTTP API.
 
-If SMTP credentials are not configured, the verification link is logged to the
-console instead of being sent, so the flow stays testable in local development.
+Uses HTTPS (Brevo's REST API), not SMTP — cloud hosts (including Render's
+free tier) commonly block outbound SMTP ports entirely or throttle them
+heavily, which can hang or silently fail a request. A plain HTTPS POST has
+no such problem.
+
+If BREVO_API_KEY is not configured, the link is logged to the console
+instead of being sent, so the flow stays testable in local development.
 """
 
-from email.message import EmailMessage
-
-import aiosmtplib
+import httpx
 
 from app.config import settings
+
+BREVO_SEND_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def _verification_link(token: str) -> str:
     return f"{settings.FRONTEND_URL}/verify-email?token={token}"
 
 
-def _build_verification_message(to_email: str, name: str, link: str) -> EmailMessage:
-    msg = EmailMessage()
-    msg["From"] = settings.FROM_EMAIL or settings.SMTP_USER
-    msg["To"] = to_email
-    msg["Subject"] = "Verify your email for BLOOM 🌱"
+def _reset_link(token: str) -> str:
+    return f"{settings.FRONTEND_URL}/reset-password?token={token}"
 
+
+def _verification_content(name: str, link: str) -> tuple[str, str, str]:
+    """Returns (subject, html, text) for the verification email."""
     greeting = f"Hi {name}," if name else "Hi,"
-    msg.set_content(
+    subject = "Verify your email for BLOOM 🌱"
+    text = (
         f"{greeting}\n\n"
         f"Welcome to BLOOM! Please confirm your email address to activate your account:\n\n"
         f"{link}\n\n"
@@ -30,8 +36,7 @@ def _build_verification_message(to_email: str, name: str, link: str) -> EmailMes
         f"If you didn't create a BLOOM account, you can safely ignore this email.\n\n"
         f"— The BLOOM team"
     )
-    msg.add_alternative(
-        f"""\
+    html = f"""\
 <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; color: #2f3e34;">
   <h2 style="color: #5a8f69;">🌱 Welcome to BLOOM</h2>
   <p>{greeting}</p>
@@ -50,24 +55,15 @@ def _build_verification_message(to_email: str, name: str, link: str) -> EmailMes
     This link expires in {settings.EMAIL_VERIFICATION_EXPIRE_HOURS} hours.
     If you didn't create a BLOOM account, you can safely ignore this email.
   </p>
-</div>""",
-        subtype="html",
-    )
-    return msg
+</div>"""
+    return subject, html, text
 
 
-def _reset_link(token: str) -> str:
-    return f"{settings.FRONTEND_URL}/reset-password?token={token}"
-
-
-def _build_reset_message(to_email: str, name: str, link: str) -> EmailMessage:
-    msg = EmailMessage()
-    msg["From"] = settings.FROM_EMAIL or settings.SMTP_USER
-    msg["To"] = to_email
-    msg["Subject"] = "Reset your BLOOM password"
-
+def _reset_content(name: str, link: str) -> tuple[str, str, str]:
+    """Returns (subject, html, text) for the password reset email."""
     greeting = f"Hi {name}," if name else "Hi,"
-    msg.set_content(
+    subject = "Reset your BLOOM password"
+    text = (
         f"{greeting}\n\n"
         f"We received a request to reset your BLOOM password. Click the link below to choose a new one:\n\n"
         f"{link}\n\n"
@@ -75,8 +71,7 @@ def _build_reset_message(to_email: str, name: str, link: str) -> EmailMessage:
         f"your password will stay unchanged.\n\n"
         f"— The BLOOM team"
     )
-    msg.add_alternative(
-        f"""\
+    html = f"""\
 <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; color: #2f3e34;">
   <h2 style="color: #5a8f69;">🌱 Reset your password</h2>
   <p>{greeting}</p>
@@ -95,30 +90,40 @@ def _build_reset_message(to_email: str, name: str, link: str) -> EmailMessage:
     This link expires in 1 hour. If you didn't request this, you can safely ignore this email —
     your password will stay unchanged.
   </p>
-</div>""",
-        subtype="html",
-    )
-    return msg
+</div>"""
+    return subject, html, text
 
 
-async def _send_or_log(message: EmailMessage, to_email: str, dev_link: str, label: str) -> None:
-    """Shared send logic: real SMTP send, or a console-logged link in dev."""
-    if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
+async def _send_or_log(to_email: str, subject: str, html: str, text: str, dev_link: str, label: str) -> None:
+    """Shared send logic: real Brevo API call, or a console-logged link in dev."""
+    if not settings.BREVO_API_KEY:
         print(f"[DEV] Email not configured. {label} link for {to_email}:\n  {dev_link}")
         return
 
+    payload = {
+        "sender": {"name": settings.FROM_NAME, "email": settings.FROM_EMAIL},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html,
+        "textContent": text,
+    }
+    headers = {
+        "api-key": settings.BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
     try:
-        await aiosmtplib.send(
-            message,
-            hostname=settings.SMTP_HOST,
-            port=settings.SMTP_PORT,
-            username=settings.SMTP_USER,
-            password=settings.SMTP_PASSWORD,
-            start_tls=True,
-        )
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(BREVO_SEND_URL, json=payload, headers=headers)
+        if response.status_code >= 400:
+            print(f"[WARN] Brevo rejected {label.lower()} email to {to_email}: "
+                  f"{response.status_code} {response.text}")
+            print(f"[DEV] {label} link: {dev_link}")
+            return
         print(f"[OK] {label} email sent to {to_email}")
     except Exception as e:
-        # Don't crash the request if the mail server hiccups; log the link as a fallback.
+        # Don't crash the request if Brevo hiccups; log the link as a fallback.
         print(f"[WARN] Failed to send {label.lower()} email to {to_email}: {e}")
         print(f"[DEV] {label} link: {dev_link}")
 
@@ -126,10 +131,12 @@ async def _send_or_log(message: EmailMessage, to_email: str, dev_link: str, labe
 async def send_verification_email(to_email: str, name: str, token: str) -> None:
     """Send (or, in dev, log) the account verification email."""
     link = _verification_link(token)
-    await _send_or_log(_build_verification_message(to_email, name, link), to_email, link, "Verification")
+    subject, html, text = _verification_content(name, link)
+    await _send_or_log(to_email, subject, html, text, link, "Verification")
 
 
 async def send_password_reset_email(to_email: str, name: str, token: str) -> None:
     """Send (or, in dev, log) the password reset email."""
     link = _reset_link(token)
-    await _send_or_log(_build_reset_message(to_email, name, link), to_email, link, "Password reset")
+    subject, html, text = _reset_content(name, link)
+    await _send_or_log(to_email, subject, html, text, link, "Password reset")

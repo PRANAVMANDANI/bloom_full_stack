@@ -22,13 +22,12 @@ class Settings(BaseSettings):
     # Google OAuth (Web application client ID). Empty disables Google sign-in.
     GOOGLE_CLIENT_ID: str = ""
 
-    # Email (SMTP) for verification emails. Empty SMTP_USER falls back to
-    # logging the verification link to the console (dev mode).
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
+    # Email via Brevo's HTTP API (not SMTP — cloud hosts often block outbound
+    # SMTP ports entirely, while a plain HTTPS call always works). Empty
+    # BREVO_API_KEY falls back to logging the link to the console (dev mode).
+    BREVO_API_KEY: str = ""
     FROM_EMAIL: str = ""
+    FROM_NAME: str = "BLOOM"
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
 
     # Frontend
