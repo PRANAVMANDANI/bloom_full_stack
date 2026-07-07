@@ -1,0 +1,17 @@
+fastapi[standard]
+uvicorn[standard]
+motor
+certifi
+pydantic[email]
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+nltk
+groq
+apscheduler
+httpx
+slowapi
+google-auth
+requests
+aiosmtplib
