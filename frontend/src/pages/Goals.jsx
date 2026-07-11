@@ -71,19 +71,44 @@ export default function Goals() {
   };
 
   const handleToggleCell = async (goalId, dateStr) => {
+    // Flip the cell immediately so the click feels instant; reconcile with the
+    // server response after, and roll back if the request fails.
+    const prevGoals = goals;
+    setGoals((prev) =>
+      prev.map((g) => {
+        if (g.id !== goalId) return g;
+        const isCompleted = g.completed_dates.includes(dateStr);
+        return {
+          ...g,
+          completed_dates: isCompleted
+            ? g.completed_dates.filter((d) => d !== dateStr)
+            : [...g.completed_dates, dateStr],
+        };
+      })
+    );
     try {
       const res = await endpoints.toggleGoalDate(goalId, dateStr);
       setGoals((prev) => prev.map((g) => (g.id === goalId ? res.data : g)));
     } catch (err) {
+      setGoals(prevGoals);
       showToast('Failed to update goal date', 'error');
     }
   };
 
   const handleFreezeCell = async (goalId, dateStr) => {
+    const prevGoals = goals;
+    setGoals((prev) =>
+      prev.map((g) =>
+        g.id === goalId
+          ? { ...g, frozen_dates: [...(g.frozen_dates || []), dateStr] }
+          : g
+      )
+    );
     try {
       const res = await endpoints.freezeGoalDate(goalId, dateStr);
       setGoals((prev) => prev.map((g) => (g.id === goalId ? res.data : g)));
     } catch (err) {
+      setGoals(prevGoals);
       showToast(err.response?.data?.detail || 'Failed to freeze day', 'error');
     }
   };
