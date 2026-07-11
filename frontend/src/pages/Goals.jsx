@@ -44,7 +44,10 @@ export default function Goals() {
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim()) {
+      showToast('Please enter a goal title', 'error');
+      return;
+    }
     try {
       await endpoints.createGoal({ title: newTitle.trim(), frequency: newFrequency });
       setNewTitle('');
@@ -52,7 +55,7 @@ export default function Goals() {
       fetchGoals();
       showToast('Goal created! 🌱');
     } catch (err) {
-      showToast('Failed to create goal', 'error');
+      showToast(err.response?.data?.detail || 'Failed to create goal', 'error');
     }
   };
 

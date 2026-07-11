@@ -1,4 +1,4 @@
-"""Authentication routes: signup, login, refresh, logout, Google OAuth."""
+"""Authentication routes: signup, OTP verification, login, refresh, Google OAuth."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from datetime import datetime, timezone
@@ -7,15 +7,15 @@ from bson import ObjectId
 from app.database import get_database
 from app.rate_limit import limiter
 from app.auth.hashing import hash_password, verify_password
+from app.auth.otp import new_otp_fields, otp_matches, MAX_ATTEMPTS
 from app.auth.jwt import (
     create_token_pair,
     verify_token,
-    create_email_verification_token,
     create_password_reset_token,
 )
 from app.auth.dependencies import get_current_user
 from app.services.google_auth import verify_google_credential, GoogleAuthError
-from app.services.email_sender import send_verification_email, send_password_reset_email
+from app.services.email_sender import send_otp_email, send_password_reset_email
 from app.models.user import (
     UserCreate,
     UserLogin,
@@ -23,7 +23,7 @@ from app.models.user import (
     UserOut,
     RefreshRequest,
     GoogleAuthRequest,
-    VerifyEmailRequest,
+    VerifyOtpRequest,
     ResendVerificationRequest,
     SignupResponse,
     ForgotPasswordRequest,
@@ -31,6 +31,8 @@ from app.models.user import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+_OTP_FIELDS = ["otp_hash", "otp_expires_at", "otp_attempts"]
 
 
 def _user_out(user: dict) -> UserOut:
@@ -56,84 +58,131 @@ def _token_response(user: dict) -> TokenResponse:
     )
 
 
+async def _issue_and_send_otp(db, user_id, email: str, name: str) -> None:
+    """Generate a fresh OTP for the user, store its hash, and email the code."""
+    code, fields = new_otp_fields()
+    await db.users.update_one({"_id": user_id}, {"$set": fields})
+    await send_otp_email(email, name, code)
+
+
 @router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/minute")
 async def signup(request: Request, user_data: UserCreate):
-    """Register a new account. The user must verify their email before logging in."""
+    """Register a new account. The user must enter the emailed code to activate it."""
     db = get_database()
 
     email = user_data.email.lower()
-
-    # Check if email already exists
     existing = await db.users.find_one({"email": email})
-    if existing:
+
+    if existing and existing.get("email_verified") is not False:
+        # A verified (or Google) account already owns this email.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email already exists",
+            detail="An account with this email already exists. Try signing in instead.",
         )
 
-    # Create user document — unverified until they click the email link.
-    user_doc = {
-        "email": email,
-        "name": user_data.name,
-        "password_hash": hash_password(user_data.password),
-        "auth_provider": "password",
-        "email_verified": False,
-        "created_at": datetime.now(timezone.utc),
-        "preferences": {},
-        "token_version": 0,
-    }
+    if existing:
+        # Unverified leftover from an earlier signup attempt: let the user
+        # re-register instead of dead-ending on a 409. Whoever proves control
+        # of the inbox (via the code) owns the account, so overwriting the
+        # name/password here is safe.
+        await db.users.update_one(
+            {"_id": existing["_id"]},
+            {
+                "$set": {
+                    "name": user_data.name,
+                    "password_hash": hash_password(user_data.password),
+                }
+            },
+        )
+        user_id = existing["_id"]
+    else:
+        user_doc = {
+            "email": email,
+            "name": user_data.name,
+            "password_hash": hash_password(user_data.password),
+            "auth_provider": "password",
+            "email_verified": False,
+            "created_at": datetime.now(timezone.utc),
+            "preferences": {},
+            "token_version": 0,
+        }
+        result = await db.users.insert_one(user_doc)
+        user_id = result.inserted_id
 
-    result = await db.users.insert_one(user_doc)
-    user_id = str(result.inserted_id)
-
-    # Send the verification email (or log the link in dev).
-    token = create_email_verification_token(user_id)
-    await send_verification_email(email, user_data.name, token)
+    await _issue_and_send_otp(db, user_id, email, user_data.name)
 
     return SignupResponse(
-        message="Account created. Check your email for a verification link to activate it.",
+        message="Account created. We emailed you a 6-digit code to verify your address.",
         email=email,
     )
 
 
-@router.post("/verify-email", response_model=TokenResponse)
-async def verify_email(body: VerifyEmailRequest):
-    """Confirm an email via the signed token, then log the user in."""
-    payload = verify_token(body.token, token_type="verify")
-    if payload is None:
+@router.post("/verify-otp", response_model=TokenResponse)
+@limiter.limit("10/minute")
+async def verify_otp(request: Request, body: VerifyOtpRequest):
+    """Confirm the emailed 6-digit code, then log the user in."""
+    db = get_database()
+    email = body.email.lower()
+
+    generic_error = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="That code is incorrect or has expired. Please try again or request a new one.",
+    )
+
+    user = await db.users.find_one({"email": email})
+    if not user:
+        raise generic_error
+
+    if user.get("email_verified"):
+        # Already verified (e.g. double-click, or verified via Google) — just sign in?
+        # No: without a valid code this would let anyone log in as any verified
+        # user. Tell them to use the normal login instead.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This verification link is invalid or has expired. Please request a new one.",
+            detail="This email is already verified. Please sign in.",
         )
 
-    db = get_database()
-    user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    if not user.get("otp_hash") or not user.get("otp_expires_at"):
+        raise generic_error
 
-    if not user.get("email_verified"):
-        await db.users.update_one(
-            {"_id": user["_id"]}, {"$set": {"email_verified": True}}
+    expires_at = user["otp_expires_at"]
+    if expires_at.tzinfo is None:  # Mongo stores naive UTC datetimes
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise generic_error
+
+    if user.get("otp_attempts", 0) >= MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many incorrect attempts. Please request a new code.",
         )
-        user["email_verified"] = True
+
+    if not otp_matches(body.code, user["otp_hash"]):
+        await db.users.update_one({"_id": user["_id"]}, {"$inc": {"otp_attempts": 1}})
+        raise generic_error
+
+    await db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"email_verified": True}, "$unset": {f: "" for f in _OTP_FIELDS}},
+    )
+    user["email_verified"] = True
 
     return _token_response(user)
 
 
 @router.post("/resend-verification")
-@limiter.limit("3/hour")
+@limiter.limit("5/hour")
 async def resend_verification(request: Request, body: ResendVerificationRequest):
-    """Resend the verification email. Always returns a generic success response
+    """Send a fresh verification code. Always returns a generic success response
     so it can't be used to probe which emails have accounts."""
     db = get_database()
     user = await db.users.find_one({"email": body.email.lower()})
 
     if user and not user.get("email_verified") and user.get("auth_provider") == "password":
-        token = create_email_verification_token(str(user["_id"]))
-        await send_verification_email(user["email"], user.get("name", ""), token)
+        await _issue_and_send_otp(db, user["_id"], user["email"], user.get("name", ""))
 
-    return {"message": "If that account exists and needs verification, we've sent a new link."}
+    return {"message": "If that account exists and needs verification, we've sent a new code."}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -160,7 +209,7 @@ async def login(request: Request, credentials: UserLogin):
     if user.get("email_verified") is False:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email address before signing in. Check your inbox for the link.",
+            detail="Please verify your email first. We can send you a new code.",
         )
 
     return _token_response(user)
@@ -189,7 +238,17 @@ async def google_auth(request: Request, body: GoogleAuthRequest):
         updates = {"google_sub": profile["sub"], "email_verified": True}
         if profile.get("picture") and not user.get("picture"):
             updates["picture"] = profile["picture"]
-        await db.users.update_one({"_id": user["_id"]}, {"$set": updates})
+        # An unverified password signup that never completed OTP has no proven
+        # owner; Google's verified email wins and the account becomes Google-only.
+        if user.get("email_verified") is False:
+            updates["auth_provider"] = "google"
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$set": updates, "$unset": {"password_hash": "", **{f: "" for f in _OTP_FIELDS}}},
+            )
+            user.pop("password_hash", None)
+        else:
+            await db.users.update_one({"_id": user["_id"]}, {"$set": updates})
         user.update(updates)
         return _token_response(user)
 
@@ -213,24 +272,39 @@ async def google_auth(request: Request, body: GoogleAuthRequest):
 
 
 @router.post("/forgot-password")
-@limiter.limit("3/hour")
+@limiter.limit("5/hour")
 async def forgot_password(request: Request, body: ForgotPasswordRequest):
-    """Send a password reset email. Always returns a generic response so it
-    can't be used to probe which emails have accounts."""
+    """Send a password reset email if account exists with password."""
     db = get_database()
     user = await db.users.find_one({"email": body.email.lower()})
 
-    # Only password accounts have a password to reset; Google-only accounts
-    # get the same generic response either way (no account enumeration).
-    if user and user.get("password_hash"):
-        token = create_password_reset_token(str(user["_id"]), user.get("token_version", 0))
-        await send_password_reset_email(user["email"], user.get("name", ""), token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account does not exist with this email address",
+        )
 
-    return {"message": "If that email has an account, we've sent a link to reset the password."}
+    if not user.get("password_hash"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account signed in with Google and cannot reset password here.",
+        )
+
+    if user.get("email_verified") is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please verify your email first before resetting password.",
+        )
+
+    token = create_password_reset_token(str(user["_id"]), user.get("token_version", 0))
+    await send_password_reset_email(user["email"], user.get("name", ""), token)
+
+    return {"message": "Password reset link sent to your email."}
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordRequest):
+@limiter.limit("10/hour")
+async def reset_password(request: Request, body: ResetPasswordRequest):
     """Set a new password from a valid reset token, then revoke all existing sessions."""
     payload = verify_token(body.token, token_type="reset")
     if payload is None:
@@ -245,7 +319,8 @@ async def reset_password(body: ResetPasswordRequest):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
     # The token embeds the token_version at send-time — if it's already moved on
-    # (password changed, another reset used, or a logout happened), reject it.
+    # (password changed, another reset used, or a sign-out-everywhere happened),
+    # reject it.
     if payload.get("token_version", 0) != user.get("token_version", 0):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -280,7 +355,7 @@ async def refresh_tokens(body: RefreshRequest):
             detail="User not found",
         )
 
-    # Reject refresh tokens that were revoked (logout / password change).
+    # Reject refresh tokens that were revoked (sign-out-everywhere / password change).
     if payload.get("token_version", 0) != user.get("token_version", 0):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -300,16 +375,17 @@ async def get_me(user: dict = Depends(get_current_user)):
     return _user_out(user)
 
 
-@router.post("/logout")
-async def logout(user: dict = Depends(get_current_user)):
-    """Log out everywhere by bumping the user's token version.
+@router.post("/logout-all")
+async def logout_all(user: dict = Depends(get_current_user)):
+    """Sign out everywhere by bumping the user's token version.
 
-    This immediately invalidates all outstanding access and refresh tokens for
-    the account, not just the client-side copy.
+    This invalidates every outstanding access and refresh token for the
+    account. A normal single-device logout is purely client-side (the app
+    just discards its tokens) so it never touches other sessions.
     """
     db = get_database()
     await db.users.update_one(
         {"_id": ObjectId(user["_id"])},
         {"$inc": {"token_version": 1}},
     )
-    return {"message": "Logged out successfully"}
+    return {"message": "Signed out of all devices"}

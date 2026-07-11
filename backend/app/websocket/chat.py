@@ -53,8 +53,8 @@ async def build_user_context_string(db, user_id: str) -> str:
         sobriety = await compute_sobriety_days(db, doc)
         habits.append(habit_doc_to_out(doc, sobriety))
 
-    # 3. Mood logs (last 3 entries)
-    mood_cursor = db.mood_logs.find({"user_id": user_id}).sort("timestamp", -1).limit(3)
+    # 3. Mood logs (last 10 entries)
+    mood_cursor = db.mood_logs.find({"user_id": user_id}).sort("timestamp", -1).limit(10)
     moods = []
     async for doc in mood_cursor:
         moods.append(doc)

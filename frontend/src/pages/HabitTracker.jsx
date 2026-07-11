@@ -47,14 +47,18 @@ export default function HabitTracker() {
 
   const handleCreateHabit = async (e) => {
     e.preventDefault();
+    if (!newHabitName.trim()) {
+      showToast('Please enter a habit name', 'error');
+      return;
+    }
     try {
-      await endpoints.createHabit({ name: newHabitName, type: newHabitType });
+      await endpoints.createHabit({ name: newHabitName.trim(), type: newHabitType });
       setNewHabitName('');
       setShowHabitModal(false);
       fetchData();
       showToast('Habit tracking started! 💪');
     } catch (err) {
-      showToast('Failed to create habit', 'error');
+      showToast(err.response?.data?.detail || 'Failed to create habit', 'error');
     }
   };
 

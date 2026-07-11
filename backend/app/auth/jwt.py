@@ -5,15 +5,6 @@ from jose import JWTError, jwt
 from app.config import settings
 
 
-def create_email_verification_token(user_id: str) -> str:
-    """Create a short-lived signed token used to verify an email address."""
-    expire = datetime.now(timezone.utc) + timedelta(
-        hours=settings.EMAIL_VERIFICATION_EXPIRE_HOURS
-    )
-    to_encode = {"sub": user_id, "exp": expire, "type": "verify"}
-    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
-
-
 def create_password_reset_token(user_id: str, token_version: int) -> str:
     """Create a short-lived signed token used to reset a forgotten password.
 

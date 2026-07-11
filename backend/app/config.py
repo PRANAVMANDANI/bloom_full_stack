@@ -1,7 +1,13 @@
 """Application configuration via environment variables."""
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from typing import Optional
+
+# Resolve backend/.env relative to this file so the app works no matter
+# which directory uvicorn is launched from.
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -28,7 +34,7 @@ class Settings(BaseSettings):
     BREVO_API_KEY: str = ""
     FROM_EMAIL: str = ""
     FROM_NAME: str = "BLOOM"
-    EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
+    OTP_EXPIRE_MINUTES: int = 10
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
@@ -37,7 +43,7 @@ class Settings(BaseSettings):
     # (e.g. a custom domain in addition to the default Vercel URL).
     CORS_ALLOWED_ORIGINS: str = ""
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
 
     @property
     def cors_origins(self) -> list[str]:

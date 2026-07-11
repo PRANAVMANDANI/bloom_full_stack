@@ -8,7 +8,8 @@ from bson import ObjectId
 from app.database import get_database
 from app.auth.dependencies import get_current_user
 from app.auth.hashing import hash_password, verify_password
-from app.models.user import UserProfileUpdate, ChangePasswordRequest
+from app.auth.jwt import create_token_pair
+from app.models.user import UserProfileUpdate, ChangePasswordRequest, ReminderSettings
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
@@ -115,14 +116,24 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     # Bumping token_version revokes every outstanding session on password change.
+    obj_id = ObjectId(str(user["_id"]))
     await db.users.update_one(
-        {"_id": ObjectId(str(user["_id"]))},
+        {"_id": obj_id},
         {
             "$set": {"password_hash": hash_password(payload.new_password)},
             "$inc": {"token_version": 1},
         },
     )
-    return {"message": "Password updated successfully"}
+
+    # Issue fresh tokens (carrying the new token_version) so THIS device stays
+    # signed in — only other sessions get revoked.
+    updated_user = await db.users.find_one({"_id": obj_id})
+    access_token, refresh_token = create_token_pair(updated_user)
+    return {
+        "message": "Password updated successfully",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+    }
 
 
 @router.put("/profile")
@@ -154,5 +165,53 @@ async def update_user_profile(
         "preferences": updated_user.get("preferences", {}),
         "profile": updated_user.get("profile"),
         "auth_provider": updated_user.get("auth_provider", "password"),
+    }
+
+
+@router.get("/reminders")
+async def get_reminder_settings(user: dict = Depends(get_current_user)):
+    """Get current reminder settings for the user."""
+    preferences = user.get("preferences", {})
+    reminders = preferences.get("reminders", {"enabled": False, "times": []})
+    reminder_streak = preferences.get("reminder_streak", 0)
+
+    return {
+        "enabled": reminders.get("enabled", False),
+        "times": reminders.get("times", []),
+        "streak": reminder_streak,
+    }
+
+
+@router.put("/reminders")
+async def update_reminder_settings(
+    payload: ReminderSettings,
+    user: dict = Depends(get_current_user)
+):
+    """Update reminder settings for the user."""
+    db = get_database()
+    obj_id = ObjectId(user["_id"])
+
+    await db.users.update_one(
+        {"_id": obj_id},
+        {
+            "$set": {
+                "preferences.reminders": {
+                    "enabled": payload.enabled,
+                    "times": payload.times,
+                }
+            }
+        },
+    )
+
+    updated_user = await db.users.find_one({"_id": obj_id})
+    preferences = updated_user.get("preferences", {})
+    reminders = preferences.get("reminders", {})
+    reminder_streak = preferences.get("reminder_streak", 0)
+
+    return {
+        "enabled": reminders.get("enabled", False),
+        "times": reminders.get("times", []),
+        "streak": reminder_streak,
+        "message": "Reminder settings updated successfully",
     }
 

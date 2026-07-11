@@ -55,7 +55,10 @@ export default function Journal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      showToast('Please write something before submitting', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await endpoints.createJournalEntry({ text: text.trim() });
@@ -65,7 +68,7 @@ export default function Journal() {
       fetchEntries(search);
       showToast('Journal entry saved 🌱');
     } catch (err) {
-      showToast('Failed to save entry', 'error');
+      showToast(err.response?.data?.detail || 'Failed to save entry', 'error');
     } finally {
       setSubmitting(false);
     }

@@ -1,7 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import useStore from '../store/useStore';
-import * as endpoints from '../api/endpoints';
 import OnboardingModal from './OnboardingModal';
 import {
   Home,
@@ -13,6 +12,7 @@ import {
   Wind,
   Sparkles,
   Award,
+  Flower2,
   Settings,
   Menu,
   LogOut,
@@ -48,6 +48,7 @@ const SproutLogo = ({ size = 24 }) => (
 
 const navItems = [
   { path: '/dashboard', icon: <Home size={18} />, label: 'Dashboard' },
+  { path: '/garden', icon: <Flower2 size={18} />, label: 'Bloom Garden' },
   { path: '/goals', icon: <Target size={18} />, label: 'Goals' },
   { path: '/habits', icon: <Flame size={18} />, label: 'Habit Tracker' },
   { path: '/mood', icon: <Smile size={18} />, label: 'Mood Check-in' },
@@ -68,14 +69,10 @@ export default function Layout({ children }) {
   const toggleTheme = useStore((s) => s.toggleTheme);
   const navigate = useNavigate();
 
-  const handleLogout = async () => {
-    // Best-effort server-side revocation (bumps token_version) before clearing
-    // local tokens. Ignore failures so logout always completes.
-    try {
-      await endpoints.logout();
-    } catch {
-      /* token may already be invalid — clear locally regardless */
-    }
+  const handleLogout = () => {
+    // Logout is purely client-side: discard this device's tokens without
+    // revoking other sessions. "Sign out everywhere" in Settings does the
+    // server-side revocation.
     logout();
     navigate('/login');
   };

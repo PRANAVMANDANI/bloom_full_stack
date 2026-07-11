@@ -23,6 +23,7 @@ from app.routes.journal import router as journal_router
 from app.routes.insights import router as insights_router
 from app.routes.milestones import router as milestones_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.garden import router as garden_router
 from app.routes.settings import router as settings_router
 from app.routes.chat import router as chat_router
 
@@ -76,6 +77,7 @@ app.include_router(journal_router)
 app.include_router(insights_router)
 app.include_router(milestones_router)
 app.include_router(dashboard_router)
+app.include_router(garden_router)
 app.include_router(settings_router)
 app.include_router(chat_router)
 

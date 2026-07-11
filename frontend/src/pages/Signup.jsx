@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Sprout, Eye, EyeOff, Moon, Sun, MailCheck } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Sprout, Eye, EyeOff, Moon, Sun } from 'lucide-react';
 import useStore from '../store/useStore';
 import * as endpoints from '../api/endpoints';
 import GoogleSignInButton from '../components/GoogleSignInButton';
@@ -14,35 +14,40 @@ export default function Signup() {
   const toggleTheme = useStore((s) => s.toggleTheme);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false); // shows the "check your email" screen
-  const [resendMsg, setResendMsg] = useState('');
-  const [resending, setResending] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!name.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
 
     try {
       await endpoints.signup({ name, email, password });
-      setSubmitted(true);
+      navigate('/verify-email', { state: { email: email.toLowerCase() } });
     } catch (err) {
-      setError(err.response?.data?.detail || 'Signup failed. Please try again.');
-    } finally {
+      const detail = err.response?.data?.detail;
+      if (detail?.includes('already')) {
+        setError('Email already registered. Try logging in or resetting your password.');
+      } else if (err.response?.status === 429) {
+        setError('Too many signup attempts. Please try again later.');
+      } else {
+        setError(detail || 'Signup failed. Please try again.');
+      }
       setLoading(false);
-    }
-  };
-
-  const handleResend = async () => {
-    setResending(true);
-    setResendMsg('');
-    try {
-      await endpoints.resendVerification(email);
-      setResendMsg('Sent! Check your inbox (and spam folder).');
-    } catch {
-      setResendMsg('Could not resend right now. Please try again in a bit.');
-    } finally {
-      setResending(false);
     }
   };
 
@@ -55,35 +60,6 @@ export default function Signup() {
       >
         {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
       </button>
-      {submitted ? (
-        <div className="auth-card">
-          <div className="auth-title">
-            <h1><Sprout size={28} strokeWidth={2.2} /> BLOOM</h1>
-          </div>
-          <div style={{ textAlign: 'center', padding: 'var(--space-sm) 0' }}>
-            <MailCheck size={48} style={{ color: 'var(--color-sage, #5a8f69)', marginBottom: 'var(--space-md)' }} />
-            <h2 style={{ fontFamily: 'var(--font-heading)', marginBottom: 'var(--space-sm)' }}>Check your email</h2>
-            <p style={{ lineHeight: 1.6, marginBottom: 'var(--space-md)' }}>
-              We sent a verification link to <strong>{email}</strong>. Click it to activate your
-              account, then sign in.
-            </p>
-            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginBottom: 'var(--space-lg)' }}>
-              Didn't get it? Check your spam folder, or resend below.
-            </p>
-            {resendMsg && (
-              <p style={{ fontSize: '0.85rem', color: 'var(--color-sage, #5a8f69)', marginBottom: 'var(--space-md)' }}>
-                {resendMsg}
-              </p>
-            )}
-            <button className="btn btn-secondary w-full" onClick={handleResend} disabled={resending} style={{ marginBottom: 'var(--space-sm)' }}>
-              {resending ? 'Resending...' : 'Resend verification email'}
-            </button>
-            <div className="auth-footer">
-              <Link to="/login">Back to sign in</Link>
-            </div>
-          </div>
-        </div>
-      ) : (
       <div className="auth-card">
         <div className="auth-title">
           <h1><Sprout size={28} strokeWidth={2.2} /> BLOOM</h1>
@@ -91,18 +67,7 @@ export default function Signup() {
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          {error && (
-            <div style={{
-              padding: '0.75rem 1rem',
-              background: 'var(--color-rose-dim)',
-              border: '1px solid rgba(189, 93, 93, 0.3)',
-              borderRadius: 'var(--radius-md)',
-              color: 'var(--color-rose)',
-              fontSize: '0.875rem',
-            }}>
-              {error}
-            </div>
-          )}
+          {error && <div className="auth-alert" role="alert">{error}</div>}
 
           <div className="input-group">
             <label className="input-label" htmlFor="signup-name">Your Name</label>
@@ -147,9 +112,9 @@ export default function Signup() {
               />
               <button
                 type="button"
+                className="input-eye-toggle"
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)', display: 'flex' }}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -167,7 +132,6 @@ export default function Signup() {
           Already have an account? <Link to="/login">Sign in</Link>
         </div>
       </div>
-      )}
     </div>
   );
 }

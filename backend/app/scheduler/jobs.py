@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from app.services.insights_engine import run_nightly_insights
 from app.services.weekly_review import run_weekly_reviews
+from app.services.reminders import send_hourly_reminders
 
 scheduler = AsyncIOScheduler()
 
@@ -29,20 +30,14 @@ def setup_scheduler():
         replace_existing=True,
     )
 
-    # Daily reminder placeholder — runs at 8:00 AM UTC
-    # (Actual push notifications require additional infrastructure)
+    # Hourly reminders — runs at every hour (checks user preferences)
     scheduler.add_job(
-        daily_reminder_placeholder,
-        trigger=CronTrigger(hour=8, minute=0),
-        id="daily_reminder",
-        name="Daily reminder (placeholder)",
+        send_hourly_reminders,
+        trigger=CronTrigger(minute=0),
+        id="hourly_reminders",
+        name="Send reminders to users based on their preferences",
         replace_existing=True,
     )
 
     scheduler.start()
-    print("[OK] Scheduler started with nightly insights, weekly reviews, and daily reminders")
-
-
-async def daily_reminder_placeholder():
-    """Placeholder for daily reminder — logs to console."""
-    print("[INFO] Daily reminder would fire here (push notification infrastructure needed)")
+    print("[OK] Scheduler started with nightly insights, weekly reviews, and hourly reminders")

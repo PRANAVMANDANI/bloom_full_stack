@@ -5,15 +5,18 @@ export const signup = (data) => api.post('/api/auth/signup', data);
 export const login = (data) => api.post('/api/auth/login', data);
 export const googleAuth = (credential) => api.post('/api/auth/google', { credential });
 export const getMe = () => api.get('/api/auth/me');
-export const verifyEmail = (token) => api.post('/api/auth/verify-email', { token });
+export const verifyOtp = (email, code) => api.post('/api/auth/verify-otp', { email, code });
 export const resendVerification = (email) => api.post('/api/auth/resend-verification', { email });
 export const refreshTokens = (refresh_token) => api.post('/api/auth/refresh', { refresh_token });
-export const logout = () => api.post('/api/auth/logout');
+export const logoutAll = () => api.post('/api/auth/logout-all');
 export const forgotPassword = (email) => api.post('/api/auth/forgot-password', { email });
 export const resetPassword = (token, new_password) => api.post('/api/auth/reset-password', { token, new_password });
 
 // Dashboard
 export const getDashboard = () => api.get('/api/dashboard');
+
+// Bloom Garden
+export const getGarden = (weeks = 12) => api.get('/api/garden', { params: { weeks } });
 
 // Goals
 export const getGoals = () => api.get('/api/goals');
@@ -58,6 +61,8 @@ export const exportData = () => api.get('/api/settings/export');
 export const deleteAccount = () => api.delete('/api/settings/account');
 export const updateProfile = (profileData) => api.put('/api/settings/profile', profileData);
 export const changePassword = (data) => api.put('/api/settings/password', data);
+export const getReminderSettings = () => api.get('/api/settings/reminders');
+export const updateReminderSettings = (data) => api.put('/api/settings/reminders', data);
 
 // Chat Sessions
 export const getChatSessions = () => api.get('/api/chat/sessions');

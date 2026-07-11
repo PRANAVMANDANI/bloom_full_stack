@@ -95,7 +95,7 @@ The frontend also reads `VITE_API_URL` and `VITE_GOOGLE_CLIENT_ID` from `fronten
 
 ## Features
 
-- **🔐 Auth**: Signup/login with JWT refresh flow, **Google sign-in (OAuth)**, show/hide password toggle. Refresh tokens are **revocable** — logout and password changes invalidate every outstanding session. Login/signup and AI endpoints are **rate-limited** to prevent brute-force and abuse.
+- **🔐 Auth**: Signup with **6-digit email OTP verification**, login with JWT refresh flow, **Google sign-in (OAuth)**, forgot/reset password, show/hide password toggle. Refresh tokens are **revocable** — password changes and "Sign out of all devices" invalidate every other session (the current device keeps working via token rotation). Login/signup/OTP and AI endpoints are **rate-limited** to prevent brute-force and abuse.
 - **🎯 Daily Goals**: CRUD, monthly completion grid, streak tracking, heatmap
 - **💪 Habit Tracker**: Track habits, log urges (intensity 1-10, trigger tags), sobriety counter that only resets on actual relapses (resisting an urge never penalizes you), AI-generated supportive relapse messages
 - **😊 Mood Check-ins**: Daily mood score with emoji feedback, tags, notes
@@ -113,7 +113,7 @@ Visit `/docs` on the running backend for full OpenAPI documentation.
 
 | Group | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/signup`, `/login`, `/google`, `/verify-email`, `/resend-verification`, `/refresh`, `/logout` |
+| Auth | `POST /api/auth/signup`, `/login`, `/google`, `/verify-otp`, `/resend-verification`, `/forgot-password`, `/reset-password`, `/refresh`, `/logout-all`, `GET /api/auth/me` |
 | Goals | `GET/POST /api/goals`, `PUT/DELETE /api/goals/{id}`, `POST /api/goals/{id}/complete`, `POST /api/goals/{id}/toggle-date`, `GET /api/goals/stats/monthly` |
 | Habits | `GET/POST /api/habits`, `DELETE /api/habits/{id}`, `POST /api/habits/{id}/relapse` |
 | Urge Logs | `GET/POST /api/urge-logs` |

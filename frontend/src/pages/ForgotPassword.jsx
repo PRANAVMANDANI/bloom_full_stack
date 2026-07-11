@@ -15,12 +15,22 @@ export default function ForgotPassword() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
     setLoading(true);
     try {
       await endpoints.forgotPassword(email);
       setSubmitted(true);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
+      if (err.response?.status === 429) {
+        setError('Too many reset attempts. Please try again later.');
+      } else {
+        setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -61,18 +71,7 @@ export default function ForgotPassword() {
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit}>
-            {error && (
-              <div style={{
-                padding: '0.75rem 1rem',
-                background: 'var(--color-rose-dim)',
-                border: '1px solid rgba(189, 93, 93, 0.3)',
-                borderRadius: 'var(--radius-md)',
-                color: 'var(--color-rose)',
-                fontSize: '0.875rem',
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <div className="auth-alert" role="alert">{error}</div>}
 
             <div className="input-group">
               <label className="input-label" htmlFor="forgot-email">Email</label>

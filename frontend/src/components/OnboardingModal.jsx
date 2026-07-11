@@ -8,27 +8,43 @@ export default function OnboardingModal() {
   const showToast = useStore((s) => s.showToast);
 
   const [birthday, setBirthday] = useState('');
-  const [age, setAge] = useState('');
   const [focusArea, setFocusArea] = useState('General Self-Improvement & Anxiety');
   const [additionalDetails, setAdditionalDetails] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const calculateAge = (birthDateStr) => {
+    if (!birthDateStr) return null;
+    const today = new Date();
+    const birthDate = new Date(birthDateStr);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age > 0 ? age : null;
+  };
+
   // Determine if profile needs onboarding
-  const needsOnboarding = user && (!user.profile || !user.profile.focus_area || !user.profile.age);
+  const needsOnboarding = user && (!user.profile || !user.profile.focus_area || !user.profile.birthday);
 
   if (!needsOnboarding) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!age || isNaN(age) || parseInt(age) <= 0) {
-      alert("Please enter a valid age.");
+    if (!birthday) {
+      alert("Please enter your birthday.");
+      return;
+    }
+    const calculatedAge = calculateAge(birthday);
+    if (!calculatedAge || calculatedAge <= 0) {
+      alert("Please enter a valid birthday.");
       return;
     }
     setLoading(true);
     try {
       const res = await endpoints.updateProfile({
         birthday: birthday || null,
-        age: parseInt(age),
+        age: calculatedAge,
         focus_area: focusArea,
         additional_details: additionalDetails || null,
       });
@@ -55,28 +71,14 @@ export default function OnboardingModal() {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
           <div>
             <label className="form-label" style={{ marginBottom: '6px', display: 'block', fontSize: '0.875rem', fontWeight: 500 }}>
-              Age
-            </label>
-            <input
-              type="number"
-              className="input"
-              placeholder="e.g. 24"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              required
-              style={{ width: '100%', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div>
-            <label className="form-label" style={{ marginBottom: '6px', display: 'block', fontSize: '0.875rem', fontWeight: 500 }}>
-              Birthday (Optional)
+              Birthday
             </label>
             <input
               type="date"
               className="input"
               value={birthday}
               onChange={(e) => setBirthday(e.target.value)}
+              required
               style={{ width: '100%', boxSizing: 'border-box' }}
             />
           </div>

@@ -19,6 +19,16 @@ class UserProfileUpdate(BaseModel):
     additional_details: Optional[str] = None
 
 
+class ReminderSettings(BaseModel):
+    enabled: bool = True
+    times: list[int] = Field(default=[8, 18], description="Hours (0-23) when reminders should fire")
+
+    class Config:
+        json_schema_extra = {
+            "example": {"enabled": True, "times": [8, 18]}
+        }
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
@@ -56,8 +66,9 @@ class GoogleAuthRequest(BaseModel):
     credential: str
 
 
-class VerifyEmailRequest(BaseModel):
-    token: str
+class VerifyOtpRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
 class ResendVerificationRequest(BaseModel):
@@ -65,7 +76,7 @@ class ResendVerificationRequest(BaseModel):
 
 
 class SignupResponse(BaseModel):
-    """Signup no longer logs the user in — they must verify their email first."""
+    """Signup no longer logs the user in — they must enter the emailed code first."""
     message: str
     email: str
     verification_required: bool = True

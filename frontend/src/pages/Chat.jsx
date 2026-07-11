@@ -75,6 +75,21 @@ export default function Chat() {
     }
   };
 
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!input.trim()) {
+      showToast('Please type a message', 'error');
+      return;
+    }
+    if (!isConnected) {
+      showToast('Not connected to chat. Please wait...', 'error');
+      return;
+    }
+    const msg = input.trim();
+    setInput('');
+    wsRef.current?.send(JSON.stringify({ type: 'message', message: msg }));
+  };
+
   const handleCreateSession = (existingSessions = sessions) => {
     if (existingSessions.length >= 3) {
       setShowLimitModal(true);

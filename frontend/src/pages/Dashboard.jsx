@@ -5,112 +5,7 @@ import useStore from '../store/useStore';
 import * as endpoints from '../api/endpoints';
 import { MOOD_EMOJIS, AFFIRMATIONS } from '../utils/constants';
 import { Target, Flame, Sparkles, Award, Smile, BookOpen, Calendar, Sprout, Quote } from 'lucide-react';
-
-function SproutGrowthVisual({ completionRate, bestStreak }) {
-  // Stem height: starts at 25px, grows up to 105px based on bestStreak
-  const stemHeight = Math.min(105, 25 + bestStreak * 4);
-  const stemTopY = 155 - stemHeight;
-
-  return (
-    <svg width="180" height="200" viewBox="0 0 200 200" style={{ overflow: 'visible' }}>
-      {/* Soil / Ground */}
-      <ellipse cx="100" cy="175" rx="55" ry="10" fill="#6b4f3a" stroke="rgba(43,50,45,0.12)" strokeWidth="1.5" />
-
-      {/* Flower Pot */}
-      <path d="M 78 175 L 122 175 L 117 196 L 83 196 Z" fill="#c98a63" stroke="var(--accent-mood)" strokeWidth="2" />
-      <line x1="72" y1="175" x2="128" y2="175" stroke="var(--accent-mood)" strokeWidth="2.5" strokeLinecap="round" />
-
-      {/* Main Stem */}
-      <path
-        d={`M 100 175 C 95 ${175 - stemHeight / 2} 105 ${175 - stemHeight / 1.5} 100 ${stemTopY}`}
-        fill="none"
-        stroke="var(--accent-goals)"
-        strokeWidth="4.5"
-        strokeLinecap="round"
-        style={{
-          transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-        }}
-      />
-
-      {/* Leaf 1 (Left - always present as the seedling's first leaf) */}
-      <path
-        d="M 100 150 C 75 150 68 142 75 132 C 90 128 98 143 100 150"
-        fill="var(--accent-goals)"
-        fillOpacity="0.8"
-        stroke="var(--accent-goals)"
-        strokeWidth="1.5"
-        style={{ transformOrigin: '100px 150px', transition: 'all 0.5s ease-out' }}
-      />
-
-      {/* Leaf 2 (Right - 25% completion) */}
-      {completionRate >= 0.25 && (
-        <path
-          d="M 100 130 C 125 130 132 122 125 112 C 110 108 102 123 100 130"
-          fill="var(--accent-goals)"
-          fillOpacity="0.85"
-          stroke="var(--accent-goals)"
-          strokeWidth="1.5"
-          style={{
-            transformOrigin: '100px 130px',
-            transition: 'all 0.5s ease-out'
-          }}
-        />
-      )}
-
-      {/* Leaf 3 (Left - 50% completion) */}
-      {completionRate >= 0.5 && stemHeight >= 45 && (
-        <path
-          d="M 100 110 C 75 110 68 102 75 92 C 90 88 98 103 100 110"
-          fill="var(--accent-goals)"
-          fillOpacity="0.9"
-          stroke="var(--accent-goals)"
-          strokeWidth="1.5"
-          style={{
-            transformOrigin: '100px 110px',
-            transition: 'all 0.5s ease-out'
-          }}
-        />
-      )}
-
-      {/* Leaf 4 (Right - 75% completion) */}
-      {completionRate >= 0.75 && stemHeight >= 65 && (
-        <path
-          d="M 100 90 C 125 90 132 82 125 72 C 110 68 102 83 100 90"
-          fill="var(--accent-goals)"
-          fillOpacity="0.9"
-          stroke="var(--accent-goals)"
-          strokeWidth="1.5"
-          style={{
-            transformOrigin: '100px 90px',
-            transition: 'all 0.5s ease-out'
-          }}
-        />
-      )}
-
-      {/* Top Bloom Flower or Bud (100% completion!) */}
-      {completionRate >= 1.0 ? (
-        <g style={{ transformOrigin: `100px ${stemTopY}px`, animation: 'gentlePulse 2s ease-in-out infinite' }}>
-          {/* Flower Petals */}
-          <circle cx="100" cy={stemTopY} r="8" fill="var(--accent-mood)" />
-          <circle cx="91" cy={stemTopY} r="6" fill="var(--accent-mood)" />
-          <circle cx="109" cy={stemTopY} r="6" fill="var(--accent-mood)" />
-          <circle cx="100" cy={stemTopY - 9} r="6" fill="var(--accent-mood)" />
-          <circle cx="100" cy={stemTopY + 9} r="6" fill="var(--accent-mood)" />
-          <circle cx="100" cy={stemTopY} r="4" fill="var(--text-primary)" />
-        </g>
-      ) : (
-        /* Unbloomed Sprout Bud */
-        <path
-          d={`M 100 ${stemTopY} C 92 ${stemTopY - 10} 100 ${stemTopY - 15} 100 ${stemTopY} C 108 ${stemTopY - 10} 100 ${stemTopY - 15} 100 ${stemTopY}`}
-          fill="var(--accent-goals)"
-          stroke="var(--accent-goals)"
-          strokeWidth="1"
-          style={{ transition: 'all 0.5s ease-out' }}
-        />
-      )}
-    </svg>
-  );
-}
+import { SproutGrowthVisual } from '../components/PlantVisual';
 
 export default function Dashboard() {
   const { dashboard, dashboardLoading, fetchDashboard, showToast } = useStore();
@@ -189,7 +84,7 @@ export default function Dashboard() {
       {/* Hero Growth Panel */}
       <div className="dashboard-hero-panel">
         <div className="hero-visual-container">
-          <SproutGrowthVisual completionRate={completionRate} bestStreak={bestStreak} />
+          <SproutGrowthVisual weekPlant={data.week_plant || []} />
         </div>
         <div className="hero-stats-grid">
           <div className="hero-stat-item">

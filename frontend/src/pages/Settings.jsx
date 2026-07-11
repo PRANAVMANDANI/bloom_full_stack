@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import * as endpoints from '../api/endpoints';
 import useStore from '../store/useStore';
 import {
@@ -11,6 +11,9 @@ import {
   KeyRound,
   AlertTriangle,
   Trash2,
+  LogOut,
+  Bell,
+  Clock,
 } from 'lucide-react';
 
 export default function Settings() {
@@ -18,42 +21,139 @@ export default function Settings() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
-  const { user, setUser, logout, showToast } = useStore();
+  const deleteModalRef = useRef(null);
+  const { user, setUser, logout, showToast, updateTokens } = useStore();
+
+  useEffect(() => {
+    if (showDeleteModal && deleteModalRef.current) {
+      deleteModalRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [showDeleteModal]);
   
   const profile = user?.profile || {};
   const [birthday, setBirthday] = useState(profile.birthday || '');
-  const [age, setAge] = useState(profile.age || '');
   const [focusArea, setFocusArea] = useState(profile.focus_area || 'General Self-Improvement & Anxiety');
   const [additionalDetails, setAdditionalDetails] = useState(profile.additional_details || '');
   const [savingProfile, setSavingProfile] = useState(false);
+
+  const calculateAge = (birthDateStr) => {
+    if (!birthDateStr) return null;
+    const today = new Date();
+    const birthDate = new Date(birthDateStr);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age > 0 ? age : null;
+  };
+
+  const calculatedAge = calculateAge(birthday);
+
+  const [remindersEnabled, setRemindersEnabled] = useState(false);
+  const [reminderTimes, setReminderTimes] = useState([8, 18]);
+  const [reminderStreak, setReminderStreak] = useState(0);
+  const [savingReminders, setSavingReminders] = useState(false);
+  const [loadingReminders, setLoadingReminders] = useState(true);
+
+  useEffect(() => {
+    const loadReminders = async () => {
+      try {
+        const res = await endpoints.getReminderSettings();
+        setRemindersEnabled(res.data.enabled);
+        setReminderTimes(res.data.times);
+        setReminderStreak(res.data.streak);
+      } catch (err) {
+        console.error('Failed to load reminder settings:', err);
+      } finally {
+        setLoadingReminders(false);
+      }
+    };
+    loadReminders();
+  }, []);
+
+  const handleSaveReminders = async (e) => {
+    e.preventDefault();
+    if (reminderTimes.length === 0) {
+      showToast('Please select at least one reminder time', 'error');
+      return;
+    }
+    setSavingReminders(true);
+    try {
+      const res = await endpoints.updateReminderSettings({
+        enabled: remindersEnabled,
+        times: reminderTimes,
+      });
+      setReminderStreak(res.data.streak);
+      showToast('Reminder settings updated! 🔔');
+    } catch (err) {
+      showToast(err.response?.data?.detail || 'Failed to update reminders', 'error');
+    } finally {
+      setSavingReminders(false);
+    }
+  };
+
+  const toggleReminderTime = (hour) => {
+    setReminderTimes(prev =>
+      prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour].sort((a, b) => a - b)
+    );
+  };
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [loggingOutAll, setLoggingOutAll] = useState(false);
+
+  const handleLogoutAll = async () => {
+    setLoggingOutAll(true);
+    try {
+      await endpoints.logoutAll();
+      logout();
+      window.location.href = '/login';
+    } catch (err) {
+      showToast('Could not sign out everywhere. Please try again.', 'error');
+      setLoggingOutAll(false);
+    }
+  };
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
+    if (!currentPassword) {
+      showToast('Please enter your current password', 'error');
+      return;
+    }
+    if (!newPassword) {
+      showToast('Please enter a new password', 'error');
+      return;
+    }
     if (newPassword.length < 6) {
-      showToast('New password must be at least 6 characters.', 'error');
+      showToast('New password must be at least 6 characters', 'error');
       return;
     }
     if (newPassword !== confirmPassword) {
-      showToast('New passwords do not match.', 'error');
+      showToast('New passwords do not match', 'error');
       return;
     }
     setChangingPassword(true);
     try {
-      await endpoints.changePassword({
+      const res = await endpoints.changePassword({
         current_password: currentPassword,
         new_password: newPassword,
       });
+      if (res.data?.access_token) {
+        updateTokens(res.data.access_token, res.data.refresh_token);
+      }
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       showToast('Password updated successfully 🔒');
     } catch (err) {
-      showToast(err.response?.data?.detail || 'Failed to update password', 'error');
+      if (err.response?.status === 401) {
+        showToast('Current password is incorrect', 'error');
+      } else {
+        showToast(err.response?.data?.detail || 'Failed to update password', 'error');
+      }
     } finally {
       setChangingPassword(false);
     }
@@ -61,22 +161,30 @@ export default function Settings() {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    if (!age || isNaN(age) || parseInt(age) <= 0) {
-      showToast('Please enter a valid age.', 'error');
+    if (!birthday) {
+      showToast('Please enter your birthday', 'error');
+      return;
+    }
+    if (!focusArea.trim()) {
+      showToast('Please select or enter a focus area', 'error');
+      return;
+    }
+    if (!calculatedAge || calculatedAge <= 0) {
+      showToast('Please enter a valid birthday', 'error');
       return;
     }
     setSavingProfile(true);
     try {
       const res = await endpoints.updateProfile({
         birthday: birthday || null,
-        age: parseInt(age),
+        age: calculatedAge,
         focus_area: focusArea,
         additional_details: additionalDetails || null,
       });
       setUser(res.data);
-      showToast('Profile demographics updated! 🌱');
+      showToast('Profile updated! 🌱');
     } catch (err) {
-      showToast('Failed to update profile details', 'error');
+      showToast(err.response?.data?.detail || 'Failed to update profile', 'error');
     } finally {
       setSavingProfile(false);
     }
@@ -104,14 +212,17 @@ export default function Settings() {
   };
 
   const handleDeleteAccount = async () => {
-    if (deleteConfirm !== 'DELETE') return;
+    if (deleteConfirm !== 'DELETE') {
+      showToast('Please type DELETE to confirm', 'error');
+      return;
+    }
     setDeleting(true);
     try {
       await endpoints.deleteAccount();
       showToast('Account deleted. Take care.');
       logout();
     } catch (err) {
-      showToast('Failed to delete account', 'error');
+      showToast(err.response?.data?.detail || 'Failed to delete account', 'error');
     } finally {
       setDeleting(false);
     }
@@ -151,6 +262,82 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Reminders */}
+      <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Bell size={18} style={{ color: 'var(--accent-mood)' }} />
+          <h3 className="card-title" style={{ margin: 0 }}>Daily Reminders</h3>
+        </div>
+        <p style={{ marginBottom: 'var(--space-md)', fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
+          Get daily reminders to check in. We'll send notifications at your preferred times (UTC).
+        </p>
+        {loadingReminders ? (
+          <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>Loading...</p>
+        ) : (
+          <form onSubmit={handleSaveReminders} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+            <div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-md)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={remindersEnabled}
+                  onChange={(e) => setRemindersEnabled(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: 500 }}>Enable daily reminders</span>
+              </label>
+            </div>
+
+            {remindersEnabled && (
+              <div>
+                <label className="input-label" style={{ fontWeight: 500, marginBottom: 'var(--space-sm)' }}>
+                  <Clock size={16} style={{ display: 'inline', marginRight: '6px' }} />
+                  Reminder Times (UTC)
+                </label>
+                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 'var(--space-sm)' }}>
+                  Select hours when you'd like to receive reminders
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))', gap: 'var(--space-sm)' }}>
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].map(hour => (
+                    <button
+                      key={hour}
+                      type="button"
+                      onClick={() => toggleReminderTime(hour)}
+                      style={{
+                        padding: 'var(--space-sm)',
+                        border: reminderTimes.includes(hour) ? '2px solid var(--accent-mood)' : '1px solid var(--color-border)',
+                        background: reminderTimes.includes(hour) ? 'rgba(193, 122, 82, 0.1)' : 'var(--color-bg-input)',
+                        color: reminderTimes.includes(hour) ? 'var(--accent-mood)' : 'var(--color-text-primary)',
+                        borderRadius: 'var(--radius-md)',
+                        fontWeight: 500,
+                        fontSize: '0.9rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      {hour}:00
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {reminderStreak > 0 && (
+              <div style={{ padding: 'var(--space-sm)', background: 'rgba(79, 122, 95, 0.08)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-sage-dim)' }}>
+                <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 500, color: 'var(--accent-goals)' }}>
+                  🔥 {reminderStreak} day reminder streak
+                </p>
+              </div>
+            )}
+
+            <div style={{ marginTop: 'var(--space-sm)' }}>
+              <button type="submit" className="btn btn-primary" disabled={savingReminders} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Save size={16} /> {savingReminders ? 'Saving...' : 'Save Reminder Settings'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
       {/* Profile Demographics */}
       <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -164,14 +351,9 @@ export default function Settings() {
           <div className="grid-2">
             <div className="input-group">
               <label className="input-label" style={{ fontWeight: 500 }}>Age</label>
-              <input
-                className="input"
-                type="number"
-                placeholder="e.g. 24"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                required
-              />
+              <div style={{ padding: '0.625rem 0.875rem', background: 'var(--color-bg-input)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontWeight: 500, color: 'var(--color-text-primary)' }}>
+                {calculatedAge || '—'}
+              </div>
             </div>
             <div className="input-group">
               <label className="input-label" style={{ fontWeight: 500 }}>Birthday</label>
@@ -180,6 +362,7 @@ export default function Settings() {
                 type="date"
                 value={birthday}
                 onChange={(e) => setBirthday(e.target.value)}
+                required
               />
             </div>
           </div>
@@ -232,17 +415,6 @@ export default function Settings() {
             directly through your Google account instead.
           </p>
         ) : (
-        <>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '0.65rem 0.9rem', marginBottom: 'var(--space-md)',
-            background: 'var(--color-rose-dim)', border: '1px solid rgba(189, 93, 93, 0.3)',
-            borderRadius: 'var(--radius-md)', color: 'var(--color-rose)', fontSize: '0.85rem',
-          }}>
-            <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-            This only works for accounts using email/password sign-in. If you signed in with Google,
-            this won't work — there's no password on file to change.
-          </div>
         <form onSubmit={handleChangePassword} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', maxWidth: '420px' }}>
           <div className="input-group">
             <label className="input-label" htmlFor="current-password">Current password</label>
@@ -293,8 +465,27 @@ export default function Settings() {
             </button>
           </div>
         </form>
-        </>
         )}
+      </div>
+
+      {/* Sessions */}
+      <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <LogOut size={18} style={{ color: 'var(--accent-goals)' }} />
+          <h3 className="card-title" style={{ margin: 0 }}>Sessions</h3>
+        </div>
+        <p style={{ marginBottom: 'var(--space-lg)', fontSize: '0.9rem' }}>
+          Signed in on another device you don't recognize, or on a shared computer?
+          This signs you out everywhere — including this device.
+        </p>
+        <button
+          className="btn btn-secondary"
+          onClick={handleLogoutAll}
+          disabled={loggingOutAll}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          <LogOut size={16} /> {loggingOutAll ? 'Signing out...' : 'Sign out of all devices'}
+        </button>
       </div>
 
       {/* Data Export */}
@@ -342,7 +533,7 @@ export default function Settings() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
+        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)} ref={deleteModalRef}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-rose)', fontFamily: 'var(--font-heading)' }}>
               <AlertTriangle size={20} /> Delete Account

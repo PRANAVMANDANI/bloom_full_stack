@@ -11,6 +11,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
+import BloomGarden from './pages/BloomGarden';
 import Goals from './pages/Goals';
 import HabitTracker from './pages/HabitTracker';
 import MoodCheckin from './pages/MoodCheckin';
@@ -49,6 +50,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Layout><Dashboard /></Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/garden"
+          element={
+            <ProtectedRoute>
+              <Layout><BloomGarden /></Layout>
             </ProtectedRoute>
           }
         />
