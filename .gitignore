@@ -29,5 +29,5 @@ dist-ssr/
 Thumbs.db
 *.log
 
-# --- Claude Code (machine-local settings, not meant to be shared) ---
-.claude/settings.local.json
+# --- Claude Code (local dev tooling, not meant to be shared) ---
+.claude/
