@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -9,14 +10,23 @@ from typing import Optional
 # which directory uvicorn is launched from.
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
+# Only ever used as the JWT_SECRET default in local dev. If this literal value
+# is ever active with ENVIRONMENT=production, startup fails loudly instead of
+# silently signing tokens with a public, guessable secret.
+_INSECURE_DEFAULT_JWT_SECRET = "change-me-in-production-bloom-secret-key-2024"
+
 
 class Settings(BaseSettings):
+    # "development" (default, permissive) or "production" (enforces a real
+    # JWT_SECRET). Render/production deploys should set ENVIRONMENT=production.
+    ENVIRONMENT: str = "development"
+
     # MongoDB
     MONGODB_URL: str = "mongodb://localhost:27017"
     DATABASE_NAME: str = "bloom"
 
     # JWT
-    JWT_SECRET: str = "change-me-in-production-bloom-secret-key-2024"
+    JWT_SECRET: str = _INSECURE_DEFAULT_JWT_SECRET
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -44,6 +54,15 @@ class Settings(BaseSettings):
     CORS_ALLOWED_ORIGINS: str = ""
 
     model_config = {"env_file": str(_ENV_FILE), "env_file_encoding": "utf-8"}
+
+    @model_validator(mode="after")
+    def _require_real_secret_in_production(self) -> "Settings":
+        if self.ENVIRONMENT == "production" and self.JWT_SECRET == _INSECURE_DEFAULT_JWT_SECRET:
+            raise ValueError(
+                "JWT_SECRET is still the insecure default. Set a real JWT_SECRET "
+                "env var before running with ENVIRONMENT=production."
+            )
+        return self
 
     @property
     def cors_origins(self) -> list[str]:

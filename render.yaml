@@ -19,6 +19,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.12.7
 
+      - key: ENVIRONMENT
+        value: production
+
       - key: MONGODB_URL
         sync: false
       - key: DATABASE_NAME
