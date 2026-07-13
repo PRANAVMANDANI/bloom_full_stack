@@ -1,5 +1,8 @@
 # 🌱 BLOOM — Life Improvement & Recovery
 
+[![CI](https://github.com/PRANAVMANDANI/bloom_full_stack/actions/workflows/ci.yml/badge.svg)](https://github.com/PRANAVMANDANI/bloom_full_stack/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A full-stack web application for personal growth, habit tracking, addiction recovery support, mood monitoring, journaling with sentiment analysis, guided breathing exercises, an emotional support chatbot, and an AI-powered insights engine.
 
 > **Disclaimer**: BLOOM is a support tool, not a substitute for professional mental health care. If you're in crisis, call India's national 24/7 mental health helpline **Tele MANAS at 14416** or the **KIRAN helpline at 1800-599-0019**.
@@ -107,6 +110,21 @@ The frontend also reads `VITE_API_URL` and `VITE_GOOGLE_CLIENT_ID` from `fronten
 - **⚙️ Settings**: Profile personalization, change password, full data export (JSON), permanent account deletion
 - **🌗 Dark Mode**: Toggle between light and dark themes from the sidebar, mobile header, or auth pages — your choice is remembered
 
+## Testing
+
+```bash
+# Backend (pytest, against an in-memory mongomock database — no real Mongo needed)
+cd backend
+pytest -v
+
+# Frontend (vitest + React Testing Library)
+cd frontend
+npm test       # run once
+npm run lint   # ESLint
+```
+
+CI runs both suites (plus a production frontend build) on every push and pull request via [GitHub Actions](.github/workflows/ci.yml).
+
 ## API Endpoints
 
 Visit `/docs` on the running backend for full OpenAPI documentation.
@@ -140,6 +158,7 @@ BLOOM/
 │   │   ├── services/           # Sentiment, crisis, LLM, insights
 │   │   ├── websocket/          # Chat WebSocket handler
 │   │   └── scheduler/          # APScheduler jobs
+│   ├── tests/                  # pytest suite (mongomock, no real DB needed)
 │   ├── seed.py                 # Sample data seeder
 │   ├── requirements.txt
 │   └── .env.example
