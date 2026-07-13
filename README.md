@@ -5,7 +5,13 @@
 
 A full-stack web application for personal growth, habit tracking, addiction recovery support, mood monitoring, journaling with sentiment analysis, guided breathing exercises, an emotional support chatbot, and an AI-powered insights engine.
 
+**Live demo**: [bloom-full-stack.vercel.app](https://bloom-full-stack.vercel.app) — the backend is on Render's free tier, so the first request after a period of inactivity can take 30–50s to wake up.
+
 > **Disclaimer**: BLOOM is a support tool, not a substitute for professional mental health care. If you're in crisis, call India's national 24/7 mental health helpline **Tele MANAS at 14416** or the **KIRAN helpline at 1800-599-0019**.
+
+## About
+
+A personal project built to go end-to-end on a real full-stack app — auth (JWT + OAuth), a WebSocket-based chat, a scheduled background job, and a deployed production setup (Render + Vercel + MongoDB Atlas) — rather than another CRUD tutorial project. Still actively learning and improving it; see the [test suite](#testing) and [CI workflow](.github/workflows/ci.yml) for what's currently covered.
 
 ## Tech Stack
 
