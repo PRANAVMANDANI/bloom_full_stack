@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import * as endpoints from '../api/endpoints';
 import useStore from '../store/useStore';
 import { formatDate, getSentimentInfo } from '../utils/helpers';
 import { JOURNAL_PROMPTS } from '../utils/constants';
-import { BookOpen, Search, Trash2, Lightbulb, RefreshCw, ChevronDown, ChevronUp, X, Calendar } from 'lucide-react';
+import { useSpeechToText } from '../hooks/useSpeechToText';
+import { BookOpen, Search, Trash2, Lightbulb, RefreshCw, ChevronDown, ChevronUp, X, Calendar, Mic, MicOff } from 'lucide-react';
 
 // Pull a generous window of entries so the month filter has full months to group by.
 // Capped at 100 to match the backend's `limit` validation (le=100) on GET /api/journal.
@@ -30,6 +31,11 @@ export default function Journal() {
   const [showPrompt, setShowPrompt] = useState(false);
   const searchTimer = useRef(null);
   const showToast = useStore((s) => s.showToast);
+
+  const handleDictation = useCallback((transcript) => {
+    setText((t) => (t ? t.trim() + ' ' : '') + transcript);
+  }, []);
+  const { isSupported: micSupported, isListening, toggle: toggleMic } = useSpeechToText(handleDictation);
 
   const fetchEntries = async (q = '') => {
     try {
@@ -135,14 +141,33 @@ export default function Journal() {
               <label className="input-label" htmlFor="journal-text">
                 What's on your mind?
               </label>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowPrompt((v) => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-journal)' }}
-              >
-                <Lightbulb size={14} /> {showPrompt ? 'Hide prompt' : 'Need a prompt?'}
-              </button>
+              <div className="flex items-center gap-sm">
+                {micSupported && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={toggleMic}
+                    title={isListening ? 'Stop dictation' : 'Speak your entry'}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      color: isListening ? 'var(--color-rose)' : 'var(--accent-journal)',
+                    }}
+                  >
+                    {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+                    {isListening ? 'Listening…' : 'Dictate'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowPrompt((v) => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-journal)' }}
+                >
+                  <Lightbulb size={14} /> {showPrompt ? 'Hide prompt' : 'Need a prompt?'}
+                </button>
+              </div>
             </div>
 
             {showPrompt && (
