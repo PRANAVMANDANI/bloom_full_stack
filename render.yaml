@@ -1,24 +1,19 @@
 services:
   - type: web
     name: bloom-api
-    runtime: python
+    runtime: docker
     rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
-    buildCommand: "pip install -r requirements.txt && python -c \"import nltk; nltk.download('vader_lexicon')\""
-    # --proxy-headers/--forwarded-allow-ips: Render sits behind a proxy, so
-    # uvicorn must trust X-Forwarded-For to see real client IPs. Without this,
-    # every request looks like it comes from the same address and the
-    # slowapi rate limits (login, signup, chat, etc.) would apply globally
-    # instead of per-client.
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*"
+    # Build and start commands now live in backend/Dockerfile instead of here.
+    # --proxy-headers/--forwarded-allow-ips (baked into the Dockerfile CMD):
+    # Render sits behind a proxy, so uvicorn must trust X-Forwarded-For to see
+    # real client IPs. Without this, every request looks like it comes from
+    # the same address and the slowapi rate limits (login, signup, chat,
+    # etc.) would apply globally instead of per-client.
     healthCheckPath: /health
     envVars:
-      # Pin a stable interpreter. (Python 3.14 was observed to have
-      # intermittent TLS handshake failures against MongoDB Atlas during
-      # local development on Windows; 3.12 is well-tested with PyMongo/Motor.)
-      - key: PYTHON_VERSION
-        value: 3.12.7
-
       - key: ENVIRONMENT
         value: production
 
