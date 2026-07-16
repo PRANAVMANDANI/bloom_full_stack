@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import useStore from '../store/useStore';
 import CrisisDisclaimer from '../components/CrisisDisclaimer';
 import { API_BASE_URL } from '../api/client';
 import * as endpoints from '../api/endpoints';
-import { MessageCircle, Send, Plus, Trash2, Pencil, ShieldAlert, Sparkles } from 'lucide-react';
+import { useSpeechToText } from '../hooks/useSpeechToText';
+import { MessageCircle, Send, Plus, Trash2, Pencil, ShieldAlert, Sparkles, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+
+const SpeechSynthesisSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 export default function Chat() {
   const [sessions, setSessions] = useState([]);
@@ -16,11 +19,25 @@ export default function Chat() {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [renameInput, setRenameInput] = useState('');
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
   const accessToken = useStore((s) => s.accessToken);
   const showToast = useStore((s) => s.showToast);
+
+  const handleDictation = useCallback((transcript) => {
+    setInput((t) => (t ? t.trim() + ' ' : '') + transcript);
+  }, []);
+  const { isSupported: micSupported, isListening, toggle: toggleMic } = useSpeechToText(handleDictation);
+
+  const speak = useCallback((text) => {
+    if (!ttsEnabled || !SpeechSynthesisSupported) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    window.speechSynthesis.speak(utterance);
+  }, [ttsEnabled]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -37,8 +54,14 @@ export default function Chat() {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      window.speechSynthesis?.cancel();
     };
   }, []);
+
+  // Stop mid-sentence if the user mutes voice replies
+  useEffect(() => {
+    if (!ttsEnabled) window.speechSynthesis?.cancel();
+  }, [ttsEnabled]);
 
   // Whenever activeSessionId changes, connect/reconnect WebSocket
   useEffect(() => {
@@ -191,10 +214,12 @@ export default function Chat() {
         case 'response':
           setIsTyping(false);
           setMessages((prev) => [...prev, { role: 'assistant', text: data.text }]);
+          speak(data.text);
           refreshSessionsList();
           break;
         case 'crisis':
           setMessages((prev) => [...prev, { role: 'crisis', text: data.text }]);
+          speak(data.text);
           break;
         case 'error':
           setIsTyping(false);
@@ -233,12 +258,26 @@ export default function Chat() {
 
   return (
     <div>
-      <div className="page-header" style={{ marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-        <MessageCircle size={36} style={{ color: 'var(--accent-chat)', marginTop: '4px' }} />
-        <div>
-          <h1 style={{ margin: '0 0 var(--space-xs)' }}>Bloom Companion</h1>
-          <p style={{ margin: 0 }}>A supportive space to reflect and talk through your feelings.</p>
+      <div className="page-header" style={{ marginBottom: 'var(--space-md)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <MessageCircle size={36} style={{ color: 'var(--accent-chat)', marginTop: '4px' }} />
+          <div>
+            <h1 style={{ margin: '0 0 var(--space-xs)' }}>Bloom Companion</h1>
+            <p style={{ margin: 0 }}>A supportive space to reflect and talk through your feelings.</p>
+          </div>
         </div>
+        {SpeechSynthesisSupported && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setTtsEnabled((v) => !v)}
+            title={ttsEnabled ? 'Mute voice replies' : 'Read replies aloud'}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-chat)', flexShrink: 0 }}
+          >
+            {ttsEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+            {ttsEnabled ? 'Voice on' : 'Voice off'}
+          </button>
+        )}
       </div>
 
       <CrisisDisclaimer />
@@ -390,6 +429,22 @@ export default function Chat() {
               onChange={(e) => setInput(e.target.value)}
               disabled={!isConnected}
             />
+            {micSupported && (
+              <button
+                type="button"
+                className="chat-send-btn"
+                onClick={toggleMic}
+                title={isListening ? 'Stop dictation' : 'Speak your message'}
+                style={{
+                  background: isListening ? 'var(--color-rose, #e0748c)' : 'var(--color-bg-input)',
+                  color: isListening ? '#fff' : 'var(--color-text-secondary)',
+                  border: '1px solid var(--color-border-strong)',
+                }}
+                aria-label={isListening ? 'Stop dictation' : 'Speak your message'}
+              >
+                {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+              </button>
+            )}
             <button
               className="chat-send-btn"
               type="submit"
